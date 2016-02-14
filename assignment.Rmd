@@ -1,0 +1,140 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Victor"
+date: "February 14, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Practical Machine Learning Assignment Writeup
+
+## Abstract
+
+In this assignment, I built a predictive model to determine whether a
+particular form of exercise (barbell lifting) is performed correctly, using
+accelerometer data. 
+
+## Data Retrieval
+
+The dataset is downloaded from the Internet:
+
+```{r cache=T}
+if (! file.exists('./pml-training.csv')) {
+    download.file('http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', destfile = './pml-training.csv')
+}
+if (! file.exists('./pml-testing.csv')) {
+    download.file('http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', destfile = './pml-testing.csv')
+}
+```
+
+Loading CSV data:
+
+```{r, warning=FALSE}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-training.csv")
+```
+
+## Exploratory Analysis
+
+The training data has 19622 observations and 160 features:
+
+```{r}
+dim(training)
+```
+
+Inspection of the data set indicates that many of the 159 predictors are
+missing in most of the observations:
+
+```{r}
+sum(complete.cases(training))
+```
+
+I've divided test into 80%/20% for training/validation set. The I cleaned the data set by extracting necessary features:
+
+```{r, warnu}
+library(caret)
+trainset <- createDataPartition(training$classe, p = 0.8, list = FALSE)
+Training <- training[trainset, ]
+Validation <- training[-trainset, ]
+nzvcol <- nearZeroVar(Training)
+Training <- Training[, -nzvcol]
+cntlength <- sapply(Training, function(x) {
+  sum(!(is.na(x) | x == ""))
+})
+nullcol <- names(cntlength[cntlength < 0.6 * length(Training$classe)])
+descriptcol <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", 
+                 "cvtd_timestamp", "new_window", "num_window")
+excludecols <- c(descriptcol, nullcol)
+Training <- Training[, !names(Training) %in% excludecols]
+```
+
+
+## Predictive Model
+
+For my initial attempt at building a predictive model I chose the random
+forest algorithm. Random forests have several nice theoretical properties:
+
+1. They deal naturally with non-linearity, and assuming linearity in this case
+would be imprudent.
+
+2. There's no parameter selection involved. While random forest may overfit a
+given data set, just as any other machine learning algorithm, it has been
+shown by Breiman that classifier variance does not grow with the number of
+trees used (unlike with Adaboosted decision trees, for example). Therefore,
+it's always better to use more trees, memory and computational power allowing.
+
+3. The algorithm allows for good in-training estimates of variable importance
+and generalization error, which largely eliminates the need for a separate
+validation stage, though obtaining a proper generalization error estimate on
+a testing set would still be prudent.
+
+4. The algorithm is generally robust to outliers and correlated covariates, which seems like a nice property to have when there are known
+interactions between variables and no data on presence of outliers in the data
+set.
+
+Given that the problem at hand is a high-dimensional classification problem
+with number of observations much exceeding the number of predictors, random
+forest seems like a sound choice.
+
+Let's train a classifier without cross validation. CV tests on such big datasets cause increase in training time significantly and actually unnecessary because of great results without cross validation.
+
+```{r}
+set.seed(555)
+library(randomForest)
+rfModel <- randomForest(classe ~ ., data = Training, importance = TRUE, ntrees = 5)
+```
+
+**Training set accuracy (In-Sample)**
+
+I expect error rate to be less than 10%.  Let's see our in-sample results:
+```{r}
+ptraining <- predict(rfModel, Training)
+print(confusionMatrix(ptraining, Training$classe))
+```
+
+**Validation set accuracy (Out-of-Sample)**
+
+Let's see our out-of-sample results:
+
+```{r}
+pvalidation <- predict(rfModel, Validation)
+print(confusionMatrix(pvalidation, Validation$classe))
+```
+
+**Test Set Prediction**
+
+Prediction of the test set:
+
+```{r}
+ptest <- predict(rfModel, testing)
+print(confusionMatrix(ptest, testing$classe))
+```
+I obtained the error rate less than 0.001% on the test set. That's very good result.
+
+## Conclusion
+
+Given that the model obtained using the initial approach appears to be highly
+successful, further exploration of the matter does not seem to be necessary.
